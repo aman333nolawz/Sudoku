@@ -1,0 +1,10 @@
+[package]
+name = "sudoku_solver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+raylib = "5.0.1"
+
+[features]
+wayland=[]
