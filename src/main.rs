@@ -10,7 +10,8 @@ use macroquad::{
 
 const W: i32 = 720;
 const H: i32 = 720;
-const SQ_SIZE: i32 = W / 9;
+const N: usize = 9; // No. of rows and cols. Don't change it!
+const SQ_SIZE: i32 = W / N as i32;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Cell {
@@ -46,25 +47,27 @@ impl Cell {
 }
 
 pub struct Sudoku {
-    pub board: Vec<Vec<Cell>>,
-    pub solved_board: Vec<Vec<Cell>>,
+    pub board: [[Cell; N]; N],
+    pub solved_board: [[Cell; N]; N],
     pub help_player: bool,
 }
 
 impl Sudoku {
-    pub fn new(vec_board: Vec<Vec<u8>>) -> Sudoku {
-        let mut board = vec![vec![Cell::Empty; 9]; 9];
-        for y in 0..9 {
-            board[y] = vec_board[y]
+    pub fn new(_board: Vec<Vec<u8>>) -> Sudoku {
+        let mut board = [[Cell::Empty; N]; N];
+        for y in 0..N {
+            board[y] = _board[y]
                 .iter()
-                .map(|x| match *x {
+                .map(|x| match x {
                     0 => Cell::Empty,
                     _ => Cell::Initial(*x),
                 })
-                .collect();
+                .collect::<Vec<Cell>>()
+                .try_into()
+                .unwrap();
         }
         let mut sudoku = Sudoku {
-            solved_board: vec![vec![Cell::Empty; 9]; 9],
+            solved_board: [[Cell::Empty; N]; N],
             help_player: false,
             board,
         };
@@ -77,12 +80,12 @@ impl Sudoku {
 
     fn create_board() -> Sudoku {
         let mut sudoku = Sudoku {
-            solved_board: vec![vec![Cell::Empty; 9]; 9],
+            solved_board: [[Cell::Empty; N]; N],
             help_player: false,
-            board: vec![vec![Cell::Empty; 9]; 9],
+            board: [[Cell::Empty; N]; N],
         };
         let mut rng = thread_rng();
-        for _ in 0..10 {
+        for _ in 0..17 {
             let x: u8 = rng.gen_range(0..=8);
             let y: u8 = rng.gen_range(0..=8);
             let num = sudoku.get_valid_nums(x, y);
@@ -91,11 +94,13 @@ impl Sudoku {
         }
 
         sudoku.solve();
-        for y in 0..9 {
+        for y in 0..N {
             sudoku.board[y] = sudoku.board[y]
                 .iter()
                 .map(|x| Cell::Initial(x.get_num()))
-                .collect();
+                .collect::<Vec<Cell>>()
+                .try_into()
+                .unwrap();
         }
         sudoku.solved_board = sudoku.board.clone();
 
@@ -112,8 +117,13 @@ impl Sudoku {
     }
 
     fn reset(&mut self) {
-        for y in 0..9 {
-            self.board[y] = self.board[y].iter().map(|x| x.get_initial()).collect();
+        for y in 0..N {
+            self.board[y] = self.board[y]
+                .iter()
+                .map(|x| x.get_initial())
+                .collect::<Vec<Cell>>()
+                .try_into()
+                .unwrap();
         }
     }
 
@@ -129,7 +139,7 @@ impl Sudoku {
     }
 
     fn get_valid_nums(&self, x: u8, y: u8) -> Vec<u8> {
-        let mut nums = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let mut nums = Vec::from_iter(1..=N as u8);
         nums.retain(|&n| self.is_valid(n, x, y));
         if nums.len() == 0 {
             return vec![0];
@@ -138,7 +148,7 @@ impl Sudoku {
     }
 
     fn is_valid(&self, num: u8, x: u8, y: u8) -> bool {
-        for i in 0..9 {
+        for i in 0..N {
             if self.board[y as usize][i].get_num() == num {
                 // Horizontal check
                 return false;
@@ -201,7 +211,7 @@ impl Sudoku {
     }
 
     fn set_cell(&mut self, num: u8, x: u8, y: u8) {
-        if num > 9 {
+        if num > N as u8 {
             return;
         }
         if num == 0 {
@@ -225,8 +235,8 @@ impl Sudoku {
     }
 
     fn draw(&self, selected: &Vec<u8>) {
-        for y in 0..9 {
-            for x in 0..9 {
+        for y in 0..N {
+            for x in 0..N {
                 let cell = self.board[y][x];
 
                 if x as u8 == selected[0] && y as u8 == selected[1] {
