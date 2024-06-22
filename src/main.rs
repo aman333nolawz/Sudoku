@@ -324,9 +324,6 @@ async fn main() {
             _ => {}
         };
 
-        if is_key_pressed(KeyCode::Space) {
-            sudoku = Sudoku::create_board();
-        }
         if is_key_pressed(KeyCode::Left) && selected[0] > 0 {
             selected[0] -= 1;
         }
@@ -369,6 +366,15 @@ async fn main() {
         {
             time = 0.0;
             sudoku.reset();
+        }
+
+        if Button::new("New")
+            .size(Vec2::new(100.0, 30.0))
+            .position(Vec2::new((W + 10) as f32, 170.0))
+            .ui(&mut root_ui())
+        {
+            time = 0.0;
+            sudoku = Sudoku::create_board();
         }
 
         sudoku.help_player = need_assistance;
