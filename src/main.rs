@@ -8,37 +8,78 @@ use macroquad::{
     },
 };
 
-const W: i32 = 630;
-const H: i32 = 630;
+const W: i32 = 720;
+const H: i32 = 720;
 const SQ_SIZE: i32 = W / 9;
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Cell {
+    Initial(u8),
+    Placed(u8),
+    Empty,
+}
+
+impl Cell {
+    fn get_num(&self) -> u8 {
+        match self {
+            Cell::Initial(v) => *v,
+            Cell::Placed(v) => *v,
+            Cell::Empty => 0,
+        }
+    }
+
+    fn is_fixed(&self) -> bool {
+        match self {
+            Cell::Initial(_) => false,
+            Cell::Placed(_) => true,
+            Cell::Empty => true,
+        }
+    }
+
+    fn get_initial(&self) -> Cell {
+        match self {
+            Cell::Initial(_) => *self,
+            Cell::Placed(_) => Cell::Empty,
+            Cell::Empty => Cell::Empty,
+        }
+    }
+}
+
 pub struct Sudoku {
-    pub board: Vec<Vec<u8>>,
-    pub initial_board: Vec<Vec<u8>>,
-    pub solved_board: Vec<Vec<u8>>,
+    pub board: Vec<Vec<Cell>>,
+    pub solved_board: Vec<Vec<Cell>>,
     pub help_player: bool,
 }
 
 impl Sudoku {
-    pub fn new(board: Vec<Vec<u8>>) -> Sudoku {
+    pub fn new(vec_board: Vec<Vec<u8>>) -> Sudoku {
+        let mut board = vec![vec![Cell::Empty; 9]; 9];
+        for y in 0..9 {
+            board[y] = vec_board[y]
+                .iter()
+                .map(|x| match *x {
+                    0 => Cell::Empty,
+                    _ => Cell::Initial(*x),
+                })
+                .collect();
+        }
         let mut sudoku = Sudoku {
-            initial_board: board.clone(),
-            solved_board: vec![vec![0; 9]; 9],
+            solved_board: vec![vec![Cell::Empty; 9]; 9],
             help_player: false,
             board,
         };
+        let temp_board = sudoku.board.clone();
         sudoku.solve();
+        sudoku.board = temp_board;
         sudoku.solved_board = sudoku.board.clone();
-        sudoku.board = sudoku.initial_board.clone();
         return sudoku;
     }
 
     fn create_board() -> Sudoku {
         let mut sudoku = Sudoku {
-            initial_board: vec![vec![0; 9]; 9],
-            solved_board: vec![vec![0; 9]; 9],
+            solved_board: vec![vec![Cell::Empty; 9]; 9],
             help_player: false,
-            board: vec![vec![0; 9]; 9],
+            board: vec![vec![Cell::Empty; 9]; 9],
         };
         let mut rng = thread_rng();
         for _ in 0..10 {
@@ -46,22 +87,24 @@ impl Sudoku {
             let y: u8 = rng.gen_range(0..=8);
             let num = sudoku.get_valid_nums(x, y);
             let num = num.iter().choose(&mut rng).unwrap();
-            sudoku.board[y as usize][x as usize] = *num;
-            sudoku.initial_board[y as usize][x as usize] = *num;
+            sudoku.board[y as usize][x as usize] = Cell::Initial(*num);
         }
 
         sudoku.solve();
-        sudoku.solved_board = sudoku.board.clone();
-        sudoku.initial_board = sudoku.board.clone();
+
+        for y in 0..9 {
+            sudoku.board[y] = sudoku.board[y]
+                .iter()
+                .map(|x| Cell::Initial(x.get_num()))
+                .collect();
+        }
+
         loop {
             let x: u8 = rng.gen_range(0..=8);
             let y: u8 = rng.gen_range(0..=8);
-            sudoku.board[y as usize][x as usize] = 0;
-            sudoku.initial_board[y as usize][x as usize] = 0;
+            sudoku.board[y as usize][x as usize] = Cell::Empty;
             if sudoku.no_of_solns() != 1 {
                 sudoku.board[y as usize][x as usize] = sudoku.solved_board[y as usize][x as usize];
-                sudoku.initial_board[y as usize][x as usize] =
-                    sudoku.solved_board[y as usize][x as usize];
                 break;
             }
         }
@@ -69,14 +112,16 @@ impl Sudoku {
     }
 
     fn reset(&mut self) {
-        self.board = self.initial_board.clone();
+        for y in 0..9 {
+            self.board[y] = self.board[y].iter().map(|x| x.get_initial()).collect();
+        }
     }
 
     fn get_empty(&self) -> Option<(u8, u8)> {
         for (y, row) in self.board.iter().enumerate() {
             for (x, cell) in row.iter().enumerate() {
-                if *cell == 0 {
-                    return Some((x.try_into().unwrap(), y.try_into().unwrap()));
+                if *cell == Cell::Empty {
+                    return Some((x as u8, y as u8));
                 }
             }
         }
@@ -94,12 +139,11 @@ impl Sudoku {
 
     fn is_valid(&self, num: u8, x: u8, y: u8) -> bool {
         for i in 0..9 {
-            if self.board[y as usize][i] == num {
+            if self.board[y as usize][i].get_num() == num {
                 // Horizontal check
                 return false;
             }
-
-            if self.board[i][x as usize] == num {
+            if self.board[i][x as usize].get_num() == num {
                 // Vertical check
                 return false;
             }
@@ -110,7 +154,7 @@ impl Sudoku {
 
         for j in y..y + 3 {
             for i in x..x + 3 {
-                if self.board[j as usize][i as usize] == num {
+                if self.board[j as usize][i as usize].get_num() == num {
                     return false;
                 }
             }
@@ -128,11 +172,11 @@ impl Sudoku {
         let (x, y) = empty_pos.unwrap();
         for n in 1..10 {
             if self.is_valid(n, x, y) {
-                self.board[y as usize][x as usize] = n;
+                self.board[y as usize][x as usize] = Cell::Placed(n);
                 if self.solve() {
                     return true;
                 }
-                self.board[y as usize][x as usize] = 0;
+                self.board[y as usize][x as usize] = Cell::Empty;
             }
         }
         return false;
@@ -148,9 +192,9 @@ impl Sudoku {
         let mut num_solutions = 0;
         for n in 1..10 {
             if self.is_valid(n, x, y) {
-                self.board[y as usize][x as usize] = n;
+                self.board[y as usize][x as usize] = Cell::Placed(n);
                 num_solutions += self.no_of_solns();
-                self.board[y as usize][x as usize] = 0;
+                self.board[y as usize][x as usize] = Cell::Empty;
             }
         }
         num_solutions
@@ -161,8 +205,8 @@ impl Sudoku {
             return;
         }
 
-        if self.initial_board[y as usize][x as usize] == 0 {
-            self.board[y as usize][x as usize] = num;
+        if self.board[y as usize][x as usize] == Cell::Empty {
+            self.board[y as usize][x as usize] = Cell::Placed(num);
         }
     }
 
@@ -185,12 +229,13 @@ impl Sudoku {
                     self.draw_selected(x as i32, y as i32);
                 }
 
-                if cell == 0 {
+                if cell == Cell::Empty {
                     continue;
                 }
 
-                let text_length = measure_text(&cell.to_string(), None, SQ_SIZE as u16, 1.0);
-                let text_color = if self.initial_board[y as usize][x as usize] == 0 {
+                let text_length =
+                    measure_text(&cell.get_num().to_string(), None, SQ_SIZE as u16, 1.0);
+                let text_color = if self.board[y as usize][x as usize].is_fixed() {
                     if self.help_player && self.solved_board[y as usize][x as usize] != cell {
                         Color::from_hex(0xff7777)
                     } else {
@@ -200,7 +245,7 @@ impl Sudoku {
                     BLACK
                 };
                 draw_text(
-                    &cell.to_string(),
+                    &cell.get_num().to_string(),
                     x as f32 * SQ_SIZE as f32 + text_length.width / 2.0,
                     y as f32 * SQ_SIZE as f32 + text_length.height * 1.5,
                     SQ_SIZE as f32,
@@ -399,6 +444,7 @@ mod tests {
             vec![0, 1, 0, 0, 0, 9, 4, 0, 0],
             vec![8, 0, 0, 4, 2, 0, 0, 0, 0],
         ]);
+        println!("{:?}", sudoku.board);
         assert_eq!(sudoku.get_empty(), Some((1, 0)));
         assert_eq!(sudoku.is_valid(5, 1, 0), false); // Horizontal checking
         assert_eq!(sudoku.is_valid(4, 2, 3), false); // Vertical checking
