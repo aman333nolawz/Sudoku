@@ -1,14 +1,22 @@
-use raylib::prelude::*;
+use ::rand::{seq::IteratorRandom, thread_rng, Rng};
+use macroquad::{
+    prelude::*,
+    ui::{
+        root_ui,
+        widgets::{Button, Checkbox},
+        Skin,
+    },
+};
 
 const W: i32 = 630;
 const H: i32 = 630;
 const SQ_SIZE: i32 = W / 9;
 
-struct Sudoku {
-    board: Vec<Vec<u8>>,
-    initial_board: Vec<Vec<u8>>,
-    solved_board: Vec<Vec<u8>>,
-    help_player: bool,
+pub struct Sudoku {
+    pub board: Vec<Vec<u8>>,
+    pub initial_board: Vec<Vec<u8>>,
+    pub solved_board: Vec<Vec<u8>>,
+    pub help_player: bool,
 }
 
 impl Sudoku {
@@ -25,6 +33,41 @@ impl Sudoku {
         return sudoku;
     }
 
+    fn create_board() -> Sudoku {
+        let mut sudoku = Sudoku {
+            initial_board: vec![vec![0; 9]; 9],
+            solved_board: vec![vec![0; 9]; 9],
+            help_player: false,
+            board: vec![vec![0; 9]; 9],
+        };
+        let mut rng = thread_rng();
+        for _ in 0..10 {
+            let x: u8 = rng.gen_range(0..=8);
+            let y: u8 = rng.gen_range(0..=8);
+            let num = sudoku.get_valid_nums(x, y);
+            let num = num.iter().choose(&mut rng).unwrap();
+            sudoku.board[y as usize][x as usize] = *num;
+            sudoku.initial_board[y as usize][x as usize] = *num;
+        }
+
+        sudoku.solve();
+        sudoku.solved_board = sudoku.board.clone();
+        sudoku.initial_board = sudoku.board.clone();
+        loop {
+            let x: u8 = rng.gen_range(0..=8);
+            let y: u8 = rng.gen_range(0..=8);
+            sudoku.board[y as usize][x as usize] = 0;
+            sudoku.initial_board[y as usize][x as usize] = 0;
+            if sudoku.no_of_solns() != 1 {
+                sudoku.board[y as usize][x as usize] = sudoku.solved_board[y as usize][x as usize];
+                sudoku.initial_board[y as usize][x as usize] =
+                    sudoku.solved_board[y as usize][x as usize];
+                break;
+            }
+        }
+        return sudoku;
+    }
+
     fn reset(&mut self) {
         self.board = self.initial_board.clone();
     }
@@ -38,6 +81,15 @@ impl Sudoku {
             }
         }
         None
+    }
+
+    fn get_valid_nums(&self, x: u8, y: u8) -> Vec<u8> {
+        let mut nums = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+        nums.retain(|&n| self.is_valid(n, x, y));
+        if nums.len() == 0 {
+            return vec![0];
+        }
+        return nums;
     }
 
     fn is_valid(&self, num: u8, x: u8, y: u8) -> bool {
@@ -86,6 +138,24 @@ impl Sudoku {
         return false;
     }
 
+    fn no_of_solns(&mut self) -> usize {
+        let empty_pos = self.get_empty();
+        if empty_pos.is_none() {
+            return 1; // One solution found
+        }
+
+        let (x, y) = empty_pos.unwrap();
+        let mut num_solutions = 0;
+        for n in 1..10 {
+            if self.is_valid(n, x, y) {
+                self.board[y as usize][x as usize] = n;
+                num_solutions += self.no_of_solns();
+                self.board[y as usize][x as usize] = 0;
+            }
+        }
+        num_solutions
+    }
+
     fn set_cell(&mut self, num: u8, x: u8, y: u8) {
         if num > 9 {
             return;
@@ -96,66 +166,44 @@ impl Sudoku {
         }
     }
 
-    fn draw_selected(&self, d: &mut RaylibDrawHandle, x: i32, y: i32) {
-        d.draw_rectangle(
-            x * SQ_SIZE,
-            y * SQ_SIZE,
-            SQ_SIZE,
-            SQ_SIZE,
-            Color::new(0xbb, 0xde, 0xfb, 0xff),
+    fn draw_selected(&self, x: i32, y: i32) {
+        draw_rectangle(
+            (x * SQ_SIZE) as f32,
+            (y * SQ_SIZE) as f32,
+            SQ_SIZE as f32,
+            SQ_SIZE as f32,
+            Color::from_hex(0xbbdefb),
         );
-
-        // for i in 0..9 {
-        //     if i != y {
-        //         d.draw_rectangle(
-        //             x * SQ_SIZE,
-        //             i * SQ_SIZE,
-        //             SQ_SIZE,
-        //             SQ_SIZE,
-        //             Color::new(0xe2, 0xeb, 0xf3, 0xff),
-        //         );
-        //     }
-
-        //     if i != x {
-        //         d.draw_rectangle(
-        //             i * SQ_SIZE,
-        //             y * SQ_SIZE,
-        //             SQ_SIZE,
-        //             SQ_SIZE,
-        //             Color::new(0xe2, 0xeb, 0xf3, 0xff),
-        //         );
-        //     }
-        // }
     }
 
-    fn draw(&self, d: &mut RaylibDrawHandle, selected: &mut Vec<u8>) {
+    fn draw(&self, selected: &Vec<u8>) {
         for y in 0..9 {
             for x in 0..9 {
                 let cell = self.board[y][x];
 
                 if x as u8 == selected[0] && y as u8 == selected[1] {
-                    self.draw_selected(d, x as i32, y as i32);
+                    self.draw_selected(x as i32, y as i32);
                 }
 
                 if cell == 0 {
                     continue;
                 }
 
-                let text_length = d.measure_text(&cell.to_string(), SQ_SIZE);
+                let text_length = measure_text(&cell.to_string(), None, SQ_SIZE as u16, 1.0);
                 let text_color = if self.initial_board[y as usize][x as usize] == 0 {
                     if self.help_player && self.solved_board[y as usize][x as usize] != cell {
-                        Color::new(0xff, 0x77, 0x77, 0xff)
+                        Color::from_hex(0xff7777)
                     } else {
-                        Color::new(0x77, 0x77, 0x77, 0xff)
+                        Color::from_hex(0x777777)
                     }
                 } else {
-                    Color::BLACK
+                    BLACK
                 };
-                d.draw_text(
+                draw_text(
                     &cell.to_string(),
-                    x as i32 * SQ_SIZE + text_length / 2,
-                    y as i32 * SQ_SIZE,
-                    SQ_SIZE,
+                    x as f32 * SQ_SIZE as f32 + text_length.width / 2.0,
+                    y as f32 * SQ_SIZE as f32 + text_length.height * 1.5,
+                    SQ_SIZE as f32,
                     text_color,
                 );
             }
@@ -163,16 +211,20 @@ impl Sudoku {
 
         for i in 0..10 {
             let t = if i % 3 == 0 { 5.0 } else { 2.0 };
-            let color = Color::new(0x34, 0x48, 0x61, 0xff);
-            d.draw_line_ex(
-                Vector2::new((i * SQ_SIZE) as f32, 0.0),
-                Vector2::new((i * SQ_SIZE) as f32, H as f32),
+            let color = Color::from_hex(0x344861);
+            draw_line(
+                (i * SQ_SIZE) as f32,
+                0.0,
+                (i * SQ_SIZE) as f32,
+                H as f32,
                 t,
                 color,
             );
-            d.draw_line_ex(
-                Vector2::new(0.0, (i * SQ_SIZE) as f32),
-                Vector2::new(W as f32, (i * SQ_SIZE) as f32),
+            draw_line(
+                0.0,
+                (i * SQ_SIZE) as f32,
+                W as f32,
+                (i * SQ_SIZE) as f32,
                 t,
                 color,
             );
@@ -180,101 +232,148 @@ impl Sudoku {
     }
 }
 
-fn main() {
-    let mut sudoku = Sudoku::new(vec![
-        vec![5, 0, 0, 9, 0, 0, 0, 0, 1],
-        vec![9, 0, 4, 7, 0, 1, 0, 0, 0],
-        vec![0, 7, 2, 0, 0, 0, 0, 0, 0],
-        vec![0, 0, 0, 5, 0, 0, 2, 0, 7],
-        vec![0, 0, 7, 0, 0, 6, 0, 4, 0],
-        vec![3, 0, 0, 0, 0, 0, 6, 0, 0],
-        vec![0, 0, 6, 0, 0, 0, 9, 3, 0],
-        vec![0, 1, 0, 0, 0, 9, 4, 0, 0],
-        vec![8, 0, 0, 4, 2, 0, 0, 0, 0],
-    ]);
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Sudoku".to_owned(),
+        fullscreen: false,
+        window_width: W + 200,
+        window_height: H,
+        ..Default::default()
+    }
+}
+
+#[macroquad::main(window_conf)]
+async fn main() {
+    let mut sudoku = Sudoku::create_board();
     let mut selected = vec![0, 0];
     let mut need_assistance = false;
 
-    let (mut rl, thread) = raylib::init().size(W + 200, H).title("Sudoku").build();
+    Sudoku::create_board();
 
-    while !rl.window_should_close() {
-        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
-            let (x, y) = (rl.get_mouse_x(), rl.get_mouse_y());
-            if 0 <= x && x <= W && 0 <= y && y <= H {
-                selected[0] = (rl.get_mouse_x() / SQ_SIZE) as u8;
-                selected[1] = (rl.get_mouse_y() / SQ_SIZE) as u8;
+    let button_style = root_ui()
+        .style_builder()
+        .font(include_bytes!(
+            "../fonts/CaskaydiaCoveNerdFontMono-Regular.ttf"
+        ))
+        .unwrap()
+        .font_size((SQ_SIZE / 3) as u16)
+        .color(Color::from_hex(0x9ca0b0))
+        .color_hovered(Color::from_hex(0x8c8fa1))
+        .color_clicked(Color::from_hex(0x7287fd))
+        .build();
+
+    let label_style = root_ui()
+        .style_builder()
+        .font(include_bytes!(
+            "../fonts/CaskaydiaCoveNerdFontMono-Regular.ttf"
+        ))
+        .unwrap()
+        .font_size((SQ_SIZE as f32 / 3.5) as u16)
+        .build();
+    let checkbox_style = root_ui()
+        .style_builder()
+        .color(Color::from_hex(0x9ca0b0))
+        .color_hovered(Color::from_hex(0x8c8fa1))
+        .color_selected_hovered(Color::from_hex(0x7287fd))
+        .color_selected(Color::from_hex(0x04a5e5))
+        .build();
+
+    let skin1 = Skin {
+        button_style,
+        checkbox_style,
+        label_style,
+        ..root_ui().default_skin()
+    };
+
+    root_ui().push_skin(&skin1);
+
+    let big_label_style = root_ui()
+        .style_builder()
+        .font_size(50)
+        .text_color(Color::from_hex(0xe64553))
+        .build();
+    let skin2 = Skin {
+        label_style: big_label_style,
+        ..skin1
+    };
+
+    let mut time = 0.0;
+
+    loop {
+        clear_background(Color::from_hex(0xeff1f5));
+
+        if is_mouse_button_down(MouseButton::Left) {
+            let (x, y) = mouse_position();
+            if 0.0 <= x && x <= W as f32 && 0.0 <= y && y <= H as f32 {
+                selected[0] = (x / SQ_SIZE as f32) as u8;
+                selected[1] = (y / SQ_SIZE as f32) as u8;
             }
         }
 
-        match rl.get_key_pressed() {
-            Some(KeyboardKey::KEY_LEFT) => {
-                if selected[0] > 0 {
-                    selected[0] -= 1;
-                }
-            }
-            Some(KeyboardKey::KEY_RIGHT) => {
-                if selected[0] < 8 {
-                    selected[0] += 1;
-                }
-            }
-            Some(KeyboardKey::KEY_UP) => {
-                if selected[1] > 0 {
-                    selected[1] -= 1;
-                }
-            }
-            Some(KeyboardKey::KEY_DOWN) => {
-                if selected[1] < 8 {
-                    selected[1] += 1;
-                }
-            }
-            Some(v) => {
-                let num = match v {
-                    KeyboardKey::KEY_ZERO => 0,
-                    KeyboardKey::KEY_ONE => 1,
-                    KeyboardKey::KEY_TWO => 2,
-                    KeyboardKey::KEY_THREE => 3,
-                    KeyboardKey::KEY_FOUR => 4,
-                    KeyboardKey::KEY_FIVE => 5,
-                    KeyboardKey::KEY_SIX => 6,
-                    KeyboardKey::KEY_SEVEN => 7,
-                    KeyboardKey::KEY_EIGHT => 8,
-                    KeyboardKey::KEY_NINE => 9,
-                    _ => 10,
-                };
-                sudoku.set_cell(num, selected[0], selected[1]);
-            }
+        match get_char_pressed() {
+            Some('0') => sudoku.set_cell(0, selected[0], selected[1]),
+            Some('1') => sudoku.set_cell(1, selected[0], selected[1]),
+            Some('2') => sudoku.set_cell(2, selected[0], selected[1]),
+            Some('3') => sudoku.set_cell(3, selected[0], selected[1]),
+            Some('4') => sudoku.set_cell(4, selected[0], selected[1]),
+            Some('5') => sudoku.set_cell(5, selected[0], selected[1]),
+            Some('6') => sudoku.set_cell(6, selected[0], selected[1]),
+            Some('7') => sudoku.set_cell(7, selected[0], selected[1]),
+            Some('8') => sudoku.set_cell(8, selected[0], selected[1]),
+            Some('9') => sudoku.set_cell(9, selected[0], selected[1]),
             _ => {}
+        };
+
+        if is_key_pressed(KeyCode::Space) {
+            sudoku = Sudoku::create_board();
+        }
+        if is_key_pressed(KeyCode::Left) && selected[0] > 0 {
+            selected[0] -= 1;
+        }
+        if is_key_pressed(KeyCode::Right) && selected[0] < 8 {
+            selected[0] += 1;
+        }
+        if is_key_pressed(KeyCode::Up) && selected[1] > 0 {
+            selected[1] -= 1;
+        }
+        if is_key_pressed(KeyCode::Down) && selected[1] < 8 {
+            selected[1] += 1;
         }
 
-        let mut d = rl.begin_drawing(&thread);
-        d.clear_background(Color::WHITE);
+        let mut time_str = String::new();
+        time_str += &format!("{:0>2}", (time as i32 / 60).to_string());
+        time_str += ":";
+        time_str += &format!("{:0>2}", (time as i32 % 60).to_string());
+        root_ui().push_skin(&skin2);
+        root_ui().label(Vec2::new((W + 10) as f32, 10.0), &time_str);
+        root_ui().pop_skin();
+        time += get_frame_time();
 
-        d.gui_set_style(
-            GuiControl::DEFAULT,
-            GuiDefaultProperty::TEXT_SIZE as i32,
-            SQ_SIZE / 2,
-        );
-        d.gui_check_box(
-            rrect(W + 10, 10, 50, 30),
-            Some(rstr!("Help")),
-            &mut need_assistance,
-        );
+        Checkbox::new(1)
+            .label("Help")
+            .pos(Vec2::new((W + 45) as f32, 60.0))
+            .size(Vec2::new(0.0, 0.0))
+            .ui(&mut root_ui(), &mut need_assistance);
 
-        d.gui_set_style(
-            GuiControl::DEFAULT,
-            GuiDefaultProperty::TEXT_SIZE as i32,
-            24,
-        );
-        if d.gui_button(rrect(W + 10, 50, 100, 30), Some(rstr!("Solve"))) {
-            sudoku.reset();
+        if Button::new("Solve")
+            .size(Vec2::new(100.0, 30.0))
+            .position(Vec2::new((W + 10) as f32, 90.0))
+            .ui(&mut root_ui())
+        {
             sudoku.solve();
         }
-        if d.gui_button(rrect(W + 10, 90, 100, 30), Some(rstr!("Reset"))) {
+        if Button::new("Reset")
+            .size(Vec2::new(100.0, 30.0))
+            .position(Vec2::new((W + 10) as f32, 130.0))
+            .ui(&mut root_ui())
+        {
+            time = 0.0;
             sudoku.reset();
         }
 
         sudoku.help_player = need_assistance;
-        sudoku.draw(&mut d, &mut selected);
+        sudoku.draw(&selected);
+        next_frame().await
     }
 }
 
