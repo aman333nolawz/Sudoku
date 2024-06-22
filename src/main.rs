@@ -91,14 +91,13 @@ impl Sudoku {
         }
 
         sudoku.solve();
-        sudoku.solved_board = sudoku.board.clone();
-
         for y in 0..9 {
             sudoku.board[y] = sudoku.board[y]
                 .iter()
                 .map(|x| Cell::Initial(x.get_num()))
                 .collect();
         }
+        sudoku.solved_board = sudoku.board.clone();
 
         loop {
             let x: u8 = rng.gen_range(0..=8);
@@ -241,7 +240,9 @@ impl Sudoku {
                 let text_length =
                     measure_text(&cell.get_num().to_string(), None, SQ_SIZE as u16, 1.0);
                 let text_color = if !self.board[y as usize][x as usize].is_fixed() {
-                    if self.help_player && self.solved_board[y as usize][x as usize].get_num() != cell.get_num() {
+                    if self.help_player
+                        && self.solved_board[y as usize][x as usize].get_num() != cell.get_num()
+                    {
                         Color::from_hex(0xff7777)
                     } else {
                         Color::from_hex(0x777777)
