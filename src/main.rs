@@ -30,9 +30,9 @@ impl Cell {
 
     fn is_fixed(&self) -> bool {
         match self {
-            Cell::Initial(_) => false,
-            Cell::Placed(_) => true,
-            Cell::Empty => true,
+            Cell::Initial(_) => true,
+            Cell::Placed(_) => false,
+            Cell::Empty => false,
         }
     }
 
@@ -91,6 +91,7 @@ impl Sudoku {
         }
 
         sudoku.solve();
+        sudoku.solved_board = sudoku.board.clone();
 
         for y in 0..9 {
             sudoku.board[y] = sudoku.board[y]
@@ -204,8 +205,12 @@ impl Sudoku {
         if num > 9 {
             return;
         }
+        if num == 0 {
+            self.board[y as usize][x as usize] = Cell::Empty;
+            return;
+        }
 
-        if self.board[y as usize][x as usize] == Cell::Empty {
+        if !self.board[y as usize][x as usize].is_fixed() {
             self.board[y as usize][x as usize] = Cell::Placed(num);
         }
     }
@@ -235,8 +240,8 @@ impl Sudoku {
 
                 let text_length =
                     measure_text(&cell.get_num().to_string(), None, SQ_SIZE as u16, 1.0);
-                let text_color = if self.board[y as usize][x as usize].is_fixed() {
-                    if self.help_player && self.solved_board[y as usize][x as usize] != cell {
+                let text_color = if !self.board[y as usize][x as usize].is_fixed() {
+                    if self.help_player && self.solved_board[y as usize][x as usize].get_num() != cell.get_num() {
                         Color::from_hex(0xff7777)
                     } else {
                         Color::from_hex(0x777777)
@@ -444,7 +449,6 @@ mod tests {
             vec![0, 1, 0, 0, 0, 9, 4, 0, 0],
             vec![8, 0, 0, 4, 2, 0, 0, 0, 0],
         ]);
-        println!("{:?}", sudoku.board);
         assert_eq!(sudoku.get_empty(), Some((1, 0)));
         assert_eq!(sudoku.is_valid(5, 1, 0), false); // Horizontal checking
         assert_eq!(sudoku.is_valid(4, 2, 3), false); // Vertical checking
