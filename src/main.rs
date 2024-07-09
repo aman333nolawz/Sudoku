@@ -15,33 +15,56 @@ const SQ_SIZE: i32 = W / N as i32;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Cell {
-    Initial(u8),
+    Fixed(u8),
     Placed(u8),
     Empty,
+    Penciled([bool; N]),
 }
 
 impl Cell {
     fn get_num(&self) -> u8 {
         match self {
-            Cell::Initial(v) => *v,
+            Cell::Fixed(v) => *v,
             Cell::Placed(v) => *v,
-            Cell::Empty => 0,
+            _ => 0,
         }
     }
 
     fn is_fixed(&self) -> bool {
         match self {
-            Cell::Initial(_) => true,
+            Cell::Fixed(_) => true,
             Cell::Placed(_) => false,
-            Cell::Empty => false,
+            _ => false,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            Cell::Empty => true,
+            Cell::Penciled(_) => true,
+            _ => false,
+        }
+    }
+
+    fn is_penciled(&self) -> bool {
+        match self {
+            Cell::Penciled(_) => true,
+            _ => false,
+        }
+    }
+
+    fn get_penciled(&self) -> Option<[bool; N]> {
+        match self {
+            Cell::Penciled(v) => Some(*v),
+            _ => None,
         }
     }
 
     fn get_initial(&self) -> Cell {
         match self {
-            Cell::Initial(_) => *self,
+            Cell::Fixed(_) => *self,
             Cell::Placed(_) => Cell::Empty,
-            Cell::Empty => Cell::Empty,
+            _ => Cell::Empty,
         }
     }
 }
@@ -60,7 +83,7 @@ impl Sudoku {
                 .iter()
                 .map(|x| match x {
                     0 => Cell::Empty,
-                    _ => Cell::Initial(*x),
+                    _ => Cell::Fixed(*x),
                 })
                 .collect::<Vec<Cell>>()
                 .try_into()
@@ -90,14 +113,14 @@ impl Sudoku {
             let y: u8 = rng.gen_range(0..=8);
             let num = sudoku.get_valid_nums(x, y);
             let num = num.iter().choose(&mut rng).unwrap();
-            sudoku.board[y as usize][x as usize] = Cell::Initial(*num);
+            sudoku.board[y as usize][x as usize] = Cell::Fixed(*num);
         }
 
         sudoku.solve();
         for y in 0..N {
             sudoku.board[y] = sudoku.board[y]
                 .iter()
-                .map(|x| Cell::Initial(x.get_num()))
+                .map(|x| Cell::Fixed(x.get_num()))
                 .collect::<Vec<Cell>>()
                 .try_into()
                 .unwrap();
@@ -130,7 +153,7 @@ impl Sudoku {
     fn get_empty(&self) -> Option<(u8, u8)> {
         for (y, row) in self.board.iter().enumerate() {
             for (x, cell) in row.iter().enumerate() {
-                if *cell == Cell::Empty {
+                if cell.is_empty() {
                     return Some((x as u8, y as u8));
                 }
             }
@@ -210,16 +233,31 @@ impl Sudoku {
         num_solutions
     }
 
-    fn set_cell(&mut self, num: u8, x: u8, y: u8) {
+    fn set_cell(&mut self, num: u8, x: u8, y: u8, pencil_mode: bool) {
         if num > N as u8 {
             return;
         }
+
+        if self.board[y as usize][x as usize].is_fixed() {
+            return;
+        }
+
         if num == 0 {
             self.board[y as usize][x as usize] = Cell::Empty;
             return;
         }
 
-        if !self.board[y as usize][x as usize].is_fixed() {
+        if pencil_mode {
+            let mut penciled_arr: [bool; 9];
+            if self.board[y as usize][x as usize].is_penciled() {
+                penciled_arr = self.board[y as usize][x as usize].get_penciled().unwrap();
+                penciled_arr[num as usize - 1] = !penciled_arr[num as usize - 1];
+            } else {
+                penciled_arr = [false; 9];
+                penciled_arr[num as usize - 1] = true;
+            }
+            self.board[y as usize][x as usize] = Cell::Penciled(penciled_arr);
+        } else {
             self.board[y as usize][x as usize] = Cell::Placed(num);
         }
     }
@@ -244,6 +282,29 @@ impl Sudoku {
                 }
 
                 if cell == Cell::Empty {
+                    continue;
+                } else if cell.is_penciled() {
+                    // Draw penciled numbers
+                    for (i, &is_penciled) in cell.get_penciled().unwrap().iter().enumerate() {
+                        if !is_penciled {
+                            continue;
+                        }
+                        let text_length =
+                            measure_text(&(i + 1).to_string(), None, SQ_SIZE as u16 / 3, 1.0);
+                        let text_x = (x as f32 * SQ_SIZE as f32)
+                            + ((i % 3) as f32 * SQ_SIZE as f32 / 3.0)
+                            + (text_length.width / 2.0);
+                        let text_y = (y as f32 * SQ_SIZE as f32)
+                            + ((i / 3) as f32 * SQ_SIZE as f32 / 3.0)
+                            + (text_length.height / 0.7);
+                        draw_text(
+                            &(i + 1).to_string(),
+                            text_x,
+                            text_y,
+                            SQ_SIZE as f32 / 3.0,
+                            Color::from_hex(0x777777),
+                        );
+                    }
                     continue;
                 }
 
@@ -308,15 +369,12 @@ async fn main() {
     let mut sudoku = Sudoku::create_board();
     let mut selected = vec![0, 0];
     let mut need_assistance = false;
+    let mut pencil_mode = true;
 
     Sudoku::create_board();
 
     let button_style = root_ui()
         .style_builder()
-        .font(include_bytes!(
-            "../fonts/CaskaydiaCoveNerdFontMono-Regular.ttf"
-        ))
-        .unwrap()
         .font_size((SQ_SIZE / 3) as u16)
         .color(Color::from_hex(0x9ca0b0))
         .color_hovered(Color::from_hex(0x8c8fa1))
@@ -325,10 +383,6 @@ async fn main() {
 
     let label_style = root_ui()
         .style_builder()
-        .font(include_bytes!(
-            "../fonts/CaskaydiaCoveNerdFontMono-Regular.ttf"
-        ))
-        .unwrap()
         .font_size((SQ_SIZE as f32 / 3.5) as u16)
         .build();
     let checkbox_style = root_ui()
@@ -372,16 +426,18 @@ async fn main() {
         }
 
         match get_char_pressed() {
-            Some('0') => sudoku.set_cell(0, selected[0], selected[1]),
-            Some('1') => sudoku.set_cell(1, selected[0], selected[1]),
-            Some('2') => sudoku.set_cell(2, selected[0], selected[1]),
-            Some('3') => sudoku.set_cell(3, selected[0], selected[1]),
-            Some('4') => sudoku.set_cell(4, selected[0], selected[1]),
-            Some('5') => sudoku.set_cell(5, selected[0], selected[1]),
-            Some('6') => sudoku.set_cell(6, selected[0], selected[1]),
-            Some('7') => sudoku.set_cell(7, selected[0], selected[1]),
-            Some('8') => sudoku.set_cell(8, selected[0], selected[1]),
-            Some('9') => sudoku.set_cell(9, selected[0], selected[1]),
+            Some('0') => sudoku.set_cell(0, selected[0], selected[1], pencil_mode),
+            Some('1') => sudoku.set_cell(1, selected[0], selected[1], pencil_mode),
+            Some('2') => sudoku.set_cell(2, selected[0], selected[1], pencil_mode),
+            Some('3') => sudoku.set_cell(3, selected[0], selected[1], pencil_mode),
+            Some('4') => sudoku.set_cell(4, selected[0], selected[1], pencil_mode),
+            Some('5') => sudoku.set_cell(5, selected[0], selected[1], pencil_mode),
+            Some('6') => sudoku.set_cell(6, selected[0], selected[1], pencil_mode),
+            Some('7') => sudoku.set_cell(7, selected[0], selected[1], pencil_mode),
+            Some('8') => sudoku.set_cell(8, selected[0], selected[1], pencil_mode),
+            Some('9') => sudoku.set_cell(9, selected[0], selected[1], pencil_mode),
+            Some('p') => pencil_mode = !pencil_mode,
+            Some('h') => need_assistance = !need_assistance,
             _ => {}
         };
 
@@ -412,6 +468,12 @@ async fn main() {
             .pos(Vec2::new((W + 45) as f32, 60.0))
             .size(Vec2::new(0.0, 0.0))
             .ui(&mut root_ui(), &mut need_assistance);
+
+        Checkbox::new(2)
+            .label("Pencil")
+            .pos(Vec2::new((W + 125) as f32, 60.0))
+            .size(Vec2::new(0.0, 0.0))
+            .ui(&mut root_ui(), &mut pencil_mode);
 
         if Button::new("Solve")
             .size(Vec2::new(100.0, 30.0))
